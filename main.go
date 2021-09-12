@@ -12,6 +12,7 @@ import (
 
 	"github.com/FollowTheProcess/go_microservices/data"
 	"github.com/FollowTheProcess/go_microservices/handlers"
+	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
 
@@ -24,6 +25,7 @@ func main() {
 
 	// create a new serve mux and register the handlers
 	sm := mux.NewRouter()
+	sm.Use(jsonContentTypeMiddleware)
 
 	// handlers for API
 	getR := sm.Methods(http.MethodGet).Subrouter()
@@ -48,10 +50,13 @@ func main() {
 	getR.Handle("/docs", sh)
 	getR.Handle("/swagger.yaml", http.FileServer(http.Dir("./")))
 
+	// CORS
+	corsHandler := gohandlers.CORS(gohandlers.AllowedOrigins([]string{"http://localhost:3000"}))
+
 	// create a new server
 	s := http.Server{
 		Addr:         ":9090",           // configure the bind address
-		Handler:      sm,                // set the default handler
+		Handler:      corsHandler(sm),   // set the default handler
 		ErrorLog:     l,                 // set the logger for the server
 		ReadTimeout:  5 * time.Second,   // max time to read request from the client
 		WriteTimeout: 10 * time.Second,  // max time to write response to the client
@@ -79,6 +84,14 @@ func main() {
 	log.Println("Got signal:", sig)
 
 	// gracefully shutdown the server, waiting max 30 seconds for current operations to complete
-	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	s.Shutdown(ctx)
+}
+
+func jsonContentTypeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
 }
